@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DiffSight – Every Detail. Every Difference.</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1c2230;--mut:#667085;--line:#e2e6ec;--acc:#1f4fd8;--acc2:#143aa8;--warn:#b25e09;--ok:#0a7d4b;--bad:#b42318}
+@media(prefers-color-scheme:dark){:root{--bg:#0e121a;--card:#161b26;--fg:#e6e9ef;--mut:#98a2b3;--line:#2a3140;--acc:#6f9bff;--acc2:#9ab9ff;--warn:#f0a04b;--ok:#4cc38a;--bad:#f97066}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{padding:28px 16px 6px;text-align:center}
+h1{margin:0;font-size:30px;letter-spacing:.3px}
+.tag{color:var(--mut);margin-top:2px}
+main{max-width:1120px;margin:0 auto;padding:16px 16px 72px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.uploads{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:700px){.uploads{grid-template-columns:1fr}}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:22px 12px;text-align:center;cursor:pointer;transition:.15s}
+.drop:hover,.drop.over{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 6%,transparent)}
+.drop b{display:block;font-size:15px}.drop small{color:var(--mut)}
+.drop .fname{margin-top:8px;font-weight:600;word-break:break-all;color:var(--acc)}
+.drop input{display:none}
+.actions{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap}
+button{font:inherit;border:0;border-radius:8px;padding:10px 20px;background:var(--acc);color:#fff;cursor:pointer;font-weight:600}
+button:hover:not(:disabled){background:var(--acc2)}button:disabled{opacity:.5;cursor:not-allowed}
+button.ghost{background:transparent;color:var(--acc);border:1px solid var(--line)}
+.opt{color:var(--mut);font-size:13px;display:flex;align-items:center;gap:6px}
+.err{color:var(--bad);margin-top:10px;white-space:pre-wrap}
+.progress{margin-top:16px;display:none}
+.bar{height:10px;background:var(--line);border-radius:6px;overflow:hidden}
+.bar>div{height:100%;width:0;background:var(--acc);transition:width .3s}
+.pmsg{color:var(--mut);font-size:13px;margin-top:6px}
+#result{display:none;margin-top:22px}
+.sumrow{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.big{font-size:34px;font-weight:700;line-height:1}.big small{display:block;font-size:13px;font-weight:400;color:var(--mut);margin-top:4px}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.pill{border:1px solid var(--line);border-radius:999px;padding:3px 11px;font-size:13px;cursor:pointer;user-select:none}
+.pill.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.dl a{color:var(--acc);margin-right:14px;font-size:14px}
+h2{font-size:18px;margin:26px 0 8px}
+.item{margin:12px 0;padding:14px 16px}
+.item h3{margin:0 0 6px;font-size:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.badge{font-size:12px;font-weight:600;border-radius:5px;padding:2px 8px;color:#fff;background:var(--acc)}
+.badge.Added{background:var(--ok)}.badge.Removed{background:var(--bad)}.badge.Moved{background:#7a5af8}.badge.Overlapped{background:#c4320a}.badge.Uncertain{background:var(--warn)}
+.conf{margin-left:auto;font-size:13px;color:var(--mut)}
+dl{display:grid;grid-template-columns:110px 1fr;gap:3px 12px;margin:8px 0}dt{color:var(--mut)}dd{margin:0;word-break:break-word}
+.ev{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:10px}
+.ev figure{margin:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+.ev img{display:block;width:100%;height:auto;cursor:zoom-in}
+.empty{color:var(--mut);padding:18px;text-align:center}
+.note{color:var(--mut);font-size:13px;margin-top:28px}
+</style>
+</head>
+<body>
+<header>
+  <h1>DiffSight</h1>
+  <div class="tag">Every Detail. Every Difference.</div>
+</header>
+<main>
+  <section class="card">
+    <div class="uploads">
+      <label class="drop" id="dropA"><b>Document A – Original</b><small>PDF, PNG or JPG · click or drop a file</small><div class="fname" id="nameA"></div><input type="file" id="fileA" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"></label>
+      <label class="drop" id="dropB"><b>Document B – Modified</b><small>PDF, PNG or JPG · click or drop a file</small><div class="fname" id="nameB"></div><input type="file" id="fileB" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"></label>
+    </div>
+    <div class="actions">
+      <button id="go" disabled>Compare Documents</button>
+      <label class="opt"><input type="checkbox" id="fast"> Faster, lower resolution (200 DPI)</label>
+    </div>
+    <div class="err" id="err"></div>
+    <div class="progress" id="prog"><div class="bar"><div id="barfill"></div></div><div class="pmsg" id="pmsg"></div></div>
+  </section>
+
+  <section id="result">
+    <div class="card">
+      <div class="sumrow">
+        <div class="big"><span id="total">0</span><small>Total differences</small></div>
+        <div class="big"><span id="unc">0</span><small>Uncertain findings</small></div>
+        <div style="flex:1;min-width:240px"><div class="pills" id="pills"></div></div>
+      </div>
+      <div class="dl" style="margin-top:12px" id="dl"></div>
+    </div>
+    <h2>Differences</h2>
+    <div id="list"></div>
+    <div id="uncWrap"><h2>Uncertain findings <span style="font-weight:400;color:var(--mut);font-size:14px">– weaker evidence, please verify</span></h2><div id="uncList"></div></div>
+    <p class="note" id="disc"></p>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const files = {A: null, B: null};
+let jobId = null, timer = null, report = null, filterCat = null;
+const POLL_MS = 3000, MAX_POLL_MS = 15 * 60 * 1000, MAX_QUEUED_MS = 2 * 60 * 1000;
+let pollStart = 0, queuedSince = null;
+
+function esc(s){ return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function setFile(slot, f){
+  files[slot] = f;
+  $("name" + slot).textContent = f ? f.name : "";
+  $("go").disabled = !(files.A && files.B);
+}
+for (const slot of ["A","B"]) {
+  const drop = $("drop" + slot), inp = $("file" + slot);
+  inp.addEventListener("change", () => setFile(slot, inp.files[0] || null));
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) setFile(slot, e.dataTransfer.files[0]); });
+}
+
+$("go").addEventListener("click", async () => {
+  $("err").textContent = ""; $("result").style.display = "none";
+  $("go").disabled = true; $("prog").style.display = "block"; setProgress(0.01, "Uploading documents…");
+  const fd = new FormData();
+  fd.append("a", files.A); fd.append("b", files.B);
+  fd.append("dpi", $("fast").checked ? "200" : "300");
+  try {
+    const r = await fetch("api/compare", {method: "POST", body: fd});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    jobId = j.job_id;
+    pollStart = Date.now(); queuedSince = null;
+    poll();
+  } catch (e) { fail(e.message); }
+});
+
+function setProgress(f, msg){ $("barfill").style.width = Math.round(f * 100) + "%"; $("pmsg").textContent = Math.round(f * 100) + "% – " + msg; }
+function fail(msg){ clearTimeout(timer); $("err").textContent = "Error: " + msg; $("prog").style.display = "none"; $("go").disabled = !(files.A && files.B); }
+
+async function poll(){
+  if (Date.now() - pollStart > MAX_POLL_MS) return fail("timed out after 15 minutes without a result. The job may still be running on the server; try again later.");
+  try {
+    const r = await fetch("api/jobs/" + jobId);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    if (j.status === "error") return fail(j.message);
+    if (j.status === "queued") {
+      if (queuedSince === null) queuedSince = Date.now();
+      else if (Date.now() - queuedSince > MAX_QUEUED_MS) return fail("timed out: the job has been waiting in the queue for more than 2 minutes (the server may be busy or its worker unavailable).");
+    } else { queuedSince = null; }
+    setProgress(j.fraction || 0, j.message || j.status);
+    if (j.status === "done") {
+      const rr = await fetch("api/jobs/" + jobId + "/report");
+      report = await rr.json();
+      $("prog").style.display = "none"; $("go").disabled = false;
+      render();
+      return;
+    }
+  } catch (e) { return fail(e.message); }
+  timer = setTimeout(poll, POLL_MS);
+}
+
+function evUrl(p){ return "api/jobs/" + jobId + "/" + p; }
+function pageLabel(i){ if (i.page_a == null) return i.page_b + " (B)"; return (i.page_b == null || i.page_a === i.page_b) ? String(i.page_a) : i.page_a + " (A) / " + i.page_b + " (B)"; }
+function loc(d){ if (!d) return "n/a"; const b = d.bbox_mm; return `x ${b[0].toFixed(0)}–${b[2].toFixed(0)} mm, y ${b[1].toFixed(0)}–${b[3].toFixed(0)} mm (px ${d.bbox_px.map(v => Math.round(v)).join(", ")})`; }
+
+function card(i){
+  const order = ["a","b","overlay","layers"];
+  const figs = Object.entries(i.evidence).sort((x,y) => order.indexOf(x[0]) - order.indexOf(y[0]))
+    .map(([k,v]) => `<figure><a href="${evUrl(v)}" target="_blank" rel="noopener"><img loading="lazy" src="${evUrl(v)}" alt="${esc(k)} evidence"></a></figure>`).join("");
+  const orig = (i.category === "Uncertain" && i.details.original_category) ? ` (looks like: ${esc(i.details.original_category)})` : "";
+  return `<article class="card item"><h3>${i.number}. ${esc(i.type)} <span class="badge ${esc(i.category)}">${esc(i.category)}</span><span class="conf">confidence ${Math.round(i.confidence * 100)}%</span></h3>
+  <dl><dt>Page</dt><dd>${esc(pageLabel(i))}</dd>
+  <dt>Document A</dt><dd>${esc(i.document_a)}</dd><dt>Document B</dt><dd>${esc(i.document_b)}</dd>
+  <dt>Difference</dt><dd>${esc(i.difference)}${orig}</dd>
+  <dt>Location (A)</dt><dd>${esc(loc(i.location.a))}</dd><dt>Location (B)</dt><dd>${esc(loc(i.location.b))}</dd>
+  <dt>Detected by</dt><dd>${esc(i.engines.join(", "))}</dd></dl>
+  <div class="ev">${figs}</div></article>`;
+}
+
+function render(){
+  const s = report.summary;
+  $("total").textContent = s.total_differences; $("unc").textContent = s.uncertain_findings;
+  const cats = Object.entries(s.by_category);
+  $("pills").innerHTML = cats.map(([k,v]) => `<span class="pill ${filterCat === k ? "on" : ""}" data-cat="${esc(k)}">${esc(k)}: ${v}</span>`).join("");
+  $("pills").querySelectorAll(".pill").forEach(p => p.addEventListener("click", () => { filterCat = (filterCat === p.dataset.cat) ? null : p.dataset.cat; render(); }));
+  const shown = report.differences.filter(i => !filterCat || i.category === filterCat);
+  $("list").innerHTML = shown.length ? shown.map(card).join("") : `<div class="card empty">No confirmed differences${filterCat ? " in this category" : ""}.</div>`;
+  $("uncWrap").style.display = report.uncertain.length ? "block" : "none";
+  $("uncList").innerHTML = report.uncertain.map(card).join("");
+  $("dl").innerHTML = ["report.html","report_embedded.html","report.txt","report"].map(n => {
+    const label = {"report.html":"Open report (HTML)","report_embedded.html":"Download single-file HTML","report.txt":"Text report","report":"JSON"}[n];
+    return `<a href="api/jobs/${jobId}/${n}" target="_blank" rel="noopener">${label}</a>`; }).join("");
+  $("disc").textContent = report.disclaimer + `  Processing time: ${report.diagnostics.timing.total_s}s.`;
+  $("result").style.display = "block";
+}
+</script>
+</body>
+</html>

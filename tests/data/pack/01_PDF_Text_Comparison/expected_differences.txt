@@ -1,0 +1,13 @@
+TEST 01 - PDF TEXT COMPARISON
+Compare original_invoice.pdf with revised_invoice.pdf.
+
+Expected differences:
+1. Due date changed: 15 November 2026 -> 20 November 2026.
+2. Payment terms changed: 15 days -> 30 days.
+3. New item added: Wireless mouse, quantity 2, Rs. 750 each.
+4. Subtotal changed: Rs. 12,500 -> Rs. 14,000.
+5. Tax changed: Rs. 2,250 -> Rs. 2,520.
+6. Grand total changed: Rs. 14,750 -> Rs. 16,520.
+7. Late fee changed: 1% -> 2% per month.
+
+Expected unchanged items: invoice ID, customer, address, invoice date, first two items, and billing email.

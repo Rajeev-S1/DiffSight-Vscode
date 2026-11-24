@@ -1,0 +1,11 @@
+TEST 02 - JPG SCANNED OCR COMPARISON
+Compare original_lab_report.jpg with revised_lab_report.jpg.
+
+Expected differences:
+1. Fasting Glucose result changed: 92 mg/dL -> 112 mg/dL.
+2. A red rectangular stamp reading REVISED COPY was added near the lower-right area.
+3. Revision label changed: Revision 01 -> Revision 02.
+
+Expected unchanged items: patient name and ID, all other test results, report dates, doctor name, lab license, and laboratory note.
+
+Manual note: These are synthetic sample documents, not real medical records.

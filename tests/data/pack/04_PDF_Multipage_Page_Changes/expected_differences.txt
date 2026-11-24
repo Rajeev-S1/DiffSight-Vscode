@@ -1,0 +1,13 @@
+TEST 04 - MULTI-PAGE PDF COMPARISON
+Compare original_agreement.pdf with revised_agreement.pdf.
+
+Expected differences:
+1. Original document has 2 pages; revised document has 3 pages.
+2. A new page 3 titled APPENDIX A was inserted. It contains three escalation contact email addresses and a note that the appendix is newly included.
+3. On the service schedule page, approval role changed: Service Manager -> Operations Manager.
+4. A new charge was added: Emergency on-site visit - Rs. 1,500 per visit.
+5. Header accent colour on the revised service schedule / appendix differs from the original.
+
+Expected unchanged items: agreement ID, provider, customer, service description, start date, term, included visits, response target, replacement-parts note, support email, and support hours.
+
+Manual note: Page alignment may report the appended page as an insertion. Confirm it is not incorrectly reported as a modification of an existing page.

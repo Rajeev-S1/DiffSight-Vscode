@@ -1,0 +1,10 @@
+TEST 03 - PNG VISUAL / LAYOUT COMPARISON
+Compare original_delivery.png with revised_delivery.png.
+
+Expected differences:
+1. Header background colour changed from dark blue to dark green. The header text is unchanged.
+2. A red rectangular stamp was added: QUALITY CHECKED / 13 NOV 2026.
+
+Expected unchanged items: delivery ID, customer, delivery date, all three item names and quantities, delivery statuses, receiver, condition, and footer text.
+
+Manual note: This case checks colour and visual-object detection in addition to OCR/text extraction.
