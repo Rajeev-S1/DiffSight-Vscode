@@ -6,7 +6,7 @@
 |---|---|---|
 | PDF text + geometry | **PyMuPDF** (native text layer, per-character boxes, fonts, embedded images, vector drawings) | Exact for digital PDFs: no OCR error, so single-character / punctuation changes are found with certainty. |
 | Rasterisation | PyMuPDF at 300 DPI (configurable) | Fast (~0.1–0.3 s/page) and deterministic, so images are *re-rendered* instead of cached. |
-| OCR (scans/images) | **Tesseract 5 (LSTM) primary**, **RapidOCR** (PP-OCR / PaddleOCR-family models on ONNX Runtime) as second opinion on low-confidence lines | In a probe on a punctuation-heavy page, Tesseract read 4/4 lines correctly in ~0.5 s; RapidOCR read 2/4 (3/4 after tuning detector thresholds) in ~2 s. Tesseract also returns word boxes + confidences. PaddleOCR itself was not installed; RapidOCR runs the same model family without the Paddle runtime. |
+| OCR (scans/images) | **PaddleOCR Large** PP-OCRv6 medium detection and recognition with ONNX Runtime | Scanned pages are rendered at the configured DPI, detected regions are sorted and cropped, then each crop is recognized and assembled into the existing Word/Line extraction format. |
 | Image ops | OpenCV, NumPy, Pillow, scikit-image (SSIM) | Free, CPU-fast. |
 | Text diff | `difflib.SequenceMatcher` (line → token → character) | As requested; `autojunk=False` for accuracy. |
 | Web | FastAPI + uvicorn, process-pool worker, file-based progress | Non-blocking uploads; the event loop never runs CV code. |
@@ -18,7 +18,7 @@ No LLMs, no paid APIs, no network access at runtime.
 ```
 upload ─▶ validate ─▶ per document, per page (cached on sha256+config):
           render ─▶ orientation (scan) ─▶ deskew (scan) ─▶ background flattening
-          ─▶ text: native layer | OCR (+2nd opinion) ─▶ objects (stamp/handwriting/image/line/block)
+          ─▶ text: native layer | PaddleOCR Large detection/recognition ─▶ objects (stamp/handwriting/image/line/block)
 page matching (DP over text/visual similarity; handles inserted, removed, moved pages)
 per matched pair:
    align B→A (SIFT/ORB + RANSAC similarity, ECC refinement, NCC check)
@@ -40,7 +40,7 @@ report: JSON + self-contained HTML + plain text, cropped A/B/overlay evidence fo
 
 * Native text difference: 0.98 (exact data, no OCR).
 * OCR text difference: min(OCR confidences)·0.9, +0.08 if the visual engine independently
-  sees changed ink at the same place, ×0.8 if a second OCR engine disagrees. **No visual
+  sees changed ink at the same place,   ×0.8 if a second OCR reading is retained. **No visual
   support ⇒ suppressed** (counted in diagnostics, not shown as a difference).
 * Visual-only region: combination of changed-ink size, SSIM drop, alignment quality and
   scan noise level.
@@ -60,7 +60,6 @@ report: JSON + self-contained HTML + plain text, cropped A/B/overlay evidence fo
 5. Multi-column pages in scans are ordered by line position; heavy column interleaving can make
    an OCR diff noisy (the visual engine is unaffected and the cross-validation rule suppresses
    unsupported OCR diffs).
-6. Non-Latin scripts need extra Tesseract language packs (`ocr_lang`).
 7. Font *size/family* changes in scans are only inferred from line height and are *uncertain*;
    in digital PDFs they are exact.
 8. Whitespace-only changes (double spaces) are detected through geometry/visual evidence, not

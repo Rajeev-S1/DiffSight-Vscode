@@ -1,13 +1,11 @@
 # DiffSight – all dependencies are free / open-source.
-# System package (not pip): tesseract-ocr with the `eng` and `osd` language data.
-#   Debian/Ubuntu: sudo apt install tesseract-ocr tesseract-ocr-eng
 numpy>=1.26
 opencv-python-headless>=4.9
 pymupdf>=1.24
 Pillow>=10.0
 scikit-image>=0.22        # SSIM
-pytesseract>=0.3.10
-rapidocr-onnxruntime>=1.2  # optional: PP-OCR (PaddleOCR family) models on ONNX Runtime, used as 2nd opinion
+paddleocr>=3.3
+onnxruntime>=1.17
 fastapi>=0.110
 uvicorn>=0.29
 python-multipart>=0.0.9

@@ -21,11 +21,6 @@ from .models import BBox, Finding, Word, bbox_area, bbox_inter, bbox_union
 from .textutil import normalize_ocr_text
 from .visual_compare import VisualContext
 
-try:
-    import pytesseract
-except Exception:  # noqa: BLE001
-    pytesseract = None
-
 COVER_TYPES = ("stamp", "handwriting", "mark", "block", "image")
 
 
@@ -46,17 +41,14 @@ def separate_layers(bgr: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def _ocr_crop(img: np.ndarray, psm: int = 7) -> Tuple[str, float]:
-    if pytesseract is None or img.size == 0:
+    if img.size == 0:
         return "", 0.0
-    img = cv2.copyMakeBorder(img, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=255 if img.ndim == 2 else (255, 255, 255))
     try:
-        d = pytesseract.image_to_data(img, config=f"--oem 1 --psm {psm}", output_type=pytesseract.Output.DICT)
+        from . import ocr as ocrmod
+        text, conf = ocrmod.recognize_crop(img)
     except Exception:  # noqa: BLE001
         return "", 0.0
-    ws = [(t.strip(), float(c)) for t, c in zip(d["text"], d["conf"]) if t.strip() and float(c) >= 0]
-    if not ws:
-        return "", 0.0
-    return normalize_ocr_text(" ".join(t for t, _ in ws)), sum(c for _, c in ws) / len(ws)
+    return normalize_ocr_text(text), conf
 
 
 def _crop(img: np.ndarray, box: BBox, pad: int = 3) -> np.ndarray:

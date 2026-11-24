@@ -22,8 +22,7 @@ from .pagematch import make_thumb
 
 
 def _cfg_key(cfg: Config) -> str:
-    raw = json.dumps([PIPELINE_VERSION, cfg.dpi, cfg.ocr_lang, cfg.ocr_psm, cfg.second_opinion,
-                      cfg.second_opinion_conf, cfg.native_min_chars, cfg.scan_cover_ratio, cfg.small_page_image_cover,
+    raw = json.dumps([PIPELINE_VERSION, cfg.dpi, cfg.native_min_chars, cfg.scan_cover_ratio, cfg.small_page_image_cover,
                       cfg.scan_target_long_px, cfg.scan_max_long_px])
     return hashlib.sha1(raw.encode()).hexdigest()[:10]
 

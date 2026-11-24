@@ -9,12 +9,6 @@ import numpy as np
 
 from .config import Config
 
-try:
-    import pytesseract
-except Exception:  # noqa: BLE001
-    pytesseract = None
-
-
 @dataclass
 class Prepared:
     """Pixel layers of one processed page (all uint8, same size)."""
@@ -34,23 +28,8 @@ def to_gray(bgr: np.ndarray) -> np.ndarray:
 
 
 def estimate_orientation(gray: np.ndarray) -> Tuple[int, float]:
-    """Return (clockwise degrees to apply so text is upright, confidence).
-    Uses Tesseract OSD; returns (0, 0.0) when it cannot decide."""
-    if pytesseract is None:
-        return 0, 0.0
-    h, w = gray.shape
-    s = 1600.0 / max(h, w)
-    small = cv2.resize(gray, None, fx=s, fy=s, interpolation=cv2.INTER_AREA) if s < 1 else gray
-    try:
-        out = pytesseract.image_to_osd(small, config="--psm 0 -c min_characters_to_try=30",
-                                       output_type=pytesseract.Output.DICT)
-    except Exception:  # noqa: BLE001 - OSD raises on pages with too little text
-        return 0, 0.0
-    rot = int(out.get("rotate", 0)) % 360
-    conf = float(out.get("orientation_conf", 0.0))
-    if rot == 0:
-        return 0, conf
-    return (rot, conf) if conf >= 2.5 else (0, conf)
+    """Orientation inference is not performed by the extraction engine."""
+    return 0, 0.0
 
 
 # ----------------------------------------------------------------------------- skew

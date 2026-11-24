@@ -29,33 +29,6 @@ if not errorlevel 1 (
 )
 call :log "Port %NEXASCAN_PORT% is free."
 
-rem ---- Tesseract: PATH, common install folders, then the NexaScan-managed copy (tools\Tesseract-OCR) ----
-set "TESS_EXE="
-for /f "delims=" %%I in ('where tesseract 2^>nul') do call :try_tess "%%I"
-call :try_tess "%ProgramFiles%\Tesseract-OCR\tesseract.exe"
-call :try_tess "%ProgramFiles(x86)%\Tesseract-OCR\tesseract.exe"
-call :try_tess "%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"
-call :try_tess "%~dp0tools\Tesseract-OCR\tesseract.exe"
-call :try_tess "%LOCALAPPDATA%\NexaScan\tools\Tesseract-OCR\tesseract.exe"
-if not defined TESS_EXE (
-  if "%NEXASCAN_SKIP_TESSERACT_CHECK%"=="1" (
-    call :log "WARNING: Tesseract OCR was not found; continuing because NEXASCAN_SKIP_TESSERACT_CHECK=1. Scanned documents will not work."
-    goto :tess_done
-  )
-  call :log "ERROR: Tesseract OCR was not found (looked in PATH, Program Files, LocalAppData and tools\Tesseract-OCR). Run setup.bat to install it automatically, or install it from https://github.com/UB-Mannheim/tesseract/wiki  (digital PDFs and Word files only: set NEXASCAN_SKIP_TESSERACT_CHECK=1)."
-  goto :fail
-)
-for %%I in ("%TESS_EXE%") do set "TESS_DIR=%%~dpI"
-set "PATH=%TESS_DIR%;%PATH%"
-set "NEXASCAN_TESSERACT=%TESS_EXE%"
-set "TESS_VER="
-"%TESS_EXE%" --version > "%TEMP%\nexascan_tess.txt" 2>&1
-set /p TESS_VER=<"%TEMP%\nexascan_tess.txt"
-call :log "Tesseract OCR: %TESS_EXE% (%TESS_VER%) - its folder was added to PATH for the backend."
-"%~dp0venv\Scripts\python.exe" -m nexascan.tesseract_locator >> "%LOG%" 2>&1
-if errorlevel 1 call :log "WARNING: Tesseract runs, but English / OSD language data is incomplete. Run setup.bat to install a complete copy."
-:tess_done
-
 call :log "Starting the backend window (application log: logs\nexascan.log) ..."
 start "DiffSight BACKEND (port %NEXASCAN_PORT%)" cmd /k ""%~dp0venv\Scripts\python.exe" "%~dp0run.py""
 call :log "Starting the frontend window (port 34517) ..."

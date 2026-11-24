@@ -7,7 +7,7 @@ from dataclasses import dataclass, asdict, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PIPELINE_VERSION = "1"  # bump to invalidate caches when algorithms change
+PIPELINE_VERSION = "2"  # invalidate page caches after the OCR engine replacement
 
 
 @dataclass
@@ -36,11 +36,7 @@ class Config:
     scan_max_long_px: int = 4800
 
     # ---- OCR ----------------------------------------------------------------
-    ocr_lang: str = "eng"
-    ocr_psm: int = 3
     ocr_workers: int = 2
-    second_opinion: bool = True         # RapidOCR on low-confidence lines
-    second_opinion_conf: float = 70.0
     use_gpu: bool = bool(int(os.environ.get("NEXASCAN_GPU", "0")))
     native_min_chars: int = 25          # below this a PDF page is treated as image-only
     scan_cover_ratio: float = 0.80      # an image covering this much of the page => scan

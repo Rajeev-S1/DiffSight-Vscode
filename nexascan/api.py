@@ -25,7 +25,7 @@ from . import __version__
 from .applog import get_logger, job_tag
 from .config import ROOT, Config
 from .pagedata import purge_doc_cache, purge_old_cache
-from .ocr import tesseract_available
+from .ocr import paddle_available
 from .report import save_embedded_html
 from .upload import UploadError, save_and_validate
 from . import wordsupport
@@ -152,8 +152,8 @@ async def _cleanup_loop() -> None:
 @app.on_event("startup")
 async def _startup() -> None:
     global _cleanup_task
-    log.info("DiffSight API started (version %s, Tesseract %s, jobs folder %s)", __version__,
-             "available" if tesseract_available() else "NOT FOUND", JOBS_DIR)
+    log.info("DiffSight API started (version %s, PaddleOCR %s, jobs folder %s)", __version__,
+             "available" if paddle_available() else "NOT FOUND", JOBS_DIR)
     await run_in_threadpool(_cleanup_old_jobs)
     _cleanup_task = asyncio.create_task(_cleanup_loop())
 
@@ -178,7 +178,7 @@ def _job_dir(job_id: str) -> Path:
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "version": __version__, "tesseract": tesseract_available(), "workers": WORKERS}
+    return {"status": "ok", "version": __version__, "paddleocr": paddle_available(), "workers": WORKERS}
 
 
 @app.post("/api/compare")
@@ -187,9 +187,9 @@ async def compare(a: UploadFile = File(..., description="Document A – original
                   dpi: Optional[int] = Form(None, ge=150, le=400, description="Advanced: force a DPI. Leave empty for automatic."),
                   second_opinion: bool = Form(True)) -> JSONResponse:
     """Upload two documents (PDF / PNG / JPG). Returns a job id immediately; poll /api/jobs/{id}."""
-    if not tesseract_available():
-        log.error("comparison refused: Tesseract OCR is not installed")
-        raise HTTPException(503, "Tesseract OCR is not installed on the server.")
+    if not paddle_available():
+        log.error("comparison refused: PaddleOCR is not installed")
+        raise HTTPException(503, "PaddleOCR is not installed on the server.")
     job_id = uuid.uuid4().hex
     jd = JOBS_DIR / job_id
     jd.mkdir(parents=True, exist_ok=True)

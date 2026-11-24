@@ -33,19 +33,6 @@ node --version >> "%LOG%" 2>&1
 call npm --version >> "%LOG%" 2>&1
 call :log "Node.js and npm found."
 
-rem ---- 3. Tesseract OCR ---------------------------------------------------
-rem Reuses a working Tesseract (PATH, common install folders or tools\Tesseract-OCR). Only if none works, the official
-rem Windows installer is downloaded and installed silently into tools\Tesseract-OCR. An existing installation is never
-rem changed. Every step (detection, download, install, verification) is written to this log.
-call :log "[Tesseract] checking for Tesseract OCR (it is installed automatically if it is missing) ..."
-%PY% -m nexascan.tesseract_install --target "%~dp0tools\Tesseract-OCR" --log "%LOG%"
-set "TESS_RC=%errorlevel%"
-if "%TESS_RC%"=="0" (
-  call :log "Tesseract OCR is ready."
-) else (
-  call :log "WARNING: Tesseract OCR is NOT available (exit code %TESS_RC%: 2 = download failed, 3 = installation failed, 4 = verification failed). Scanned PDFs, JPG and PNG need it; the reason is in the lines above. Fix it and run setup.bat again, or install it manually from https://github.com/UB-Mannheim/tesseract/wiki"
-)
-
 rem ---- 3b. LibreOffice (only needed for Word files)
 set "LO="
 where soffice >nul 2>&1 && set "LO=1"
@@ -70,14 +57,6 @@ call :log "[2/3] Installing Python packages (first time can take several minutes
 "venv\Scripts\python.exe" -m pip install -r requirements.txt >> "%LOG%" 2>&1
 if errorlevel 1 ( call :log "ERROR: pip install failed. Check the internet connection and run setup.bat again." & goto :fail )
 call :log "Python packages installed."
-
-rem ---- 4b. Prove that OCR really works: read a generated test image with the exact Tesseract NexaScan will use
-"venv\Scripts\python.exe" -m nexascan.tesseract_locator --check >> "%LOG%" 2>&1
-if errorlevel 1 (
-  call :log "WARNING: the OCR self-test did not pass - scanned documents may not work. See the Tesseract lines in this log."
-) else (
-  call :log "OCR self-test passed: Tesseract reads text correctly."
-)
 
 rem ---- 5. Web UI (React) ----------------------------------------------
 call :log "[3/3] Installing and building the web UI ..."

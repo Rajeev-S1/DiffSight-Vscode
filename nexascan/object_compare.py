@@ -79,7 +79,6 @@ def _stamp_text(bgr: np.ndarray, ink: np.ndarray, box: BBox, cfg: Config) -> Tup
     """Best-effort OCR of the lettering inside a stamp (rotation tolerant by trying 4 orientations)."""
     try:
         from . import ocr as ocrmod
-        import pytesseract
     except Exception:  # noqa: BLE001
         return "", 0.0
     h, w = ink.shape
@@ -92,13 +91,10 @@ def _stamp_text(bgr: np.ndarray, ink: np.ndarray, box: BBox, cfg: Config) -> Tup
     for k in (None, cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_180, cv2.ROTATE_90_COUNTERCLOCKWISE):
         img = crop if k is None else cv2.rotate(crop, k)
         try:
-            d = pytesseract.image_to_data(img, config="--oem 1 --psm 11", output_type=pytesseract.Output.DICT)
+            txt, conf = ocrmod.recognize_crop(img)
         except Exception:  # noqa: BLE001
             return "", 0.0
-        ws = [(t, float(c)) for t, c in zip(d["text"], d["conf"]) if t.strip() and float(c) >= 40 and len(t.strip()) >= 3]
-        if ws:
-            txt = " ".join(t for t, _ in ws)
-            conf = sum(c for _, c in ws) / len(ws)
+        if txt and len(txt.strip()) >= 3:
             score = conf * len(re.sub(r"\W", "", txt))
             if score > best[1]:
                 best = (txt, score)

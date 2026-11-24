@@ -5,7 +5,6 @@ Text (native layer + OCR) and pixels are compared by independent engines; uncert
 reported separately from confirmed ones. Signatures are compared by appearance only.
 
 ## Install
-    sudo apt install tesseract-ocr          # system dependency
     pip install -r requirements.txt --break-system-packages
 
 ## Resolution (DPI) is automatic and quality-aware
@@ -31,10 +30,9 @@ DiffSight compares Microsoft Word files next to PDF, JPG and PNG. Upload two Wor
 ## Web UI
 A top bar and one page, no side panel. After a comparison the default view is a table with **one row per difference**: Type (number, title and category), Page, Document A, Document B, Difference, Location (A), Location (B) (same wording as the HTML report), Confidence (with the engines) and, in the last column, **View evidence**, which opens the evidence viewer (side by side, overlay slider, highlighted). Tabs separate confirmed, uncertain and higher-resolution-only findings; search, page and category filters narrow the table. The HTML report, single-file HTML, text and JSON downloads are the backend's unchanged files (buttons at the top of the results). The scan / resolution details and the "verified unchanged" table are collapsible blocks.
 
-## Tesseract OCR (automatic on Windows) and the progress-file fix
-- **Detection** (`nexascan/tesseract_locator.py`): `NEXASCAN_TESSERACT`, then PATH, then the common install folders, then the DiffSight-managed copy in `tools\Tesseract-OCR`. A copy counts only if it runs and has the `eng` and `osd` language data. The backend gives pytesseract the exact path (it no longer depends on PATH) and points `TESSDATA_PREFIX` at the matching folder.
-- **Installation** (`setup.bat` -> `python -m nexascan.tesseract_install`): reuses a working Tesseract; otherwise downloads the official Windows installer (Tesseract at UB Mannheim), retries interrupted downloads, installs silently into `tools\Tesseract-OCR` (current user first, then default mode, then one elevated attempt with a Windows permission prompt), adds missing `eng`/`osd` data and verifies the result. An existing installation is never changed. Safe to run repeatedly; a downloaded installer is reused after a failed install. If the tools folder is not writable, `%LOCALAPPDATA%\NexaScan\tools\Tesseract-OCR` is used. Exit codes: 0 ready, 2 download failed, 3 installation failed, 4 verification failed.
-- **`start.bat`** finds Tesseract the same way, adds its folder to PATH for the backend, sets `NEXASCAN_TESSERACT`, verifies it runs and stops with a clear message if there is none (`NEXASCAN_SKIP_TESSERACT_CHECK=1` allows digital PDFs and Word files without it).
+## PaddleOCR Large extraction and the progress-file fix
+- **Scanned extraction** (`nexascan/ocr.py`) lazily initializes the PP-OCRv6 medium detection and recognition models with ONNX Runtime, matching the detection/crop/recognition workflow in `large.py`.
+- The existing PyMuPDF digital-text path remains unchanged. Scanned PDFs and native-page OCR fallback use PaddleOCR.
 - **WinError 5 fix** (`nexascan/worker.py`): on Windows a file that another process has open cannot be replaced. The web page's status poll reads `progress.json` while the worker replaces it, so `os.replace` could fail with `PermissionError`. `write_json_atomic` now writes a unique, closed temporary file, retries the replace for those transient errors (12 attempts, up to about 3.5 s), falls back to an in-place write, cleans up temporary files, serialises writes within a process and logs every problem; `read_json` retries too. An unwritable progress update no longer aborts the comparison (it is logged as an error); the final status writes still raise.
 - Checks for a real Windows PC: `tests\run_windows_checks.bat` and `docs/WINDOWS_CHECKLIST.md`.
 
@@ -46,7 +44,7 @@ A top bar and one page, no side panel. After a comparison the default view is a 
 | `logs/nexascan.log` | the running product (`nexascan/applog.py`) | start-up, every job (queued, resolution chosen, first run, re-check, done or failed with traceback), rejected uploads, clean-up, shutdown. Appended across runs; at start-up it is renamed to `nexascan.log.1` when larger than 5 MB. It never contains document content or file names (job ids are shortened). `NEXASCAN_LOG_DIR` changes the folder. |
 
 ## Run on Windows (easiest)
-1. Install Python 3.11+, Node.js LTS and Tesseract OCR (`winget install -e --id UB-Mannheim.TesseractOCR`).
+1. Install Python 3.11+ and Node.js LTS.
 2. Double-click `setup.bat` once (creates `venv`, installs Python packages and the web UI).
 3. Double-click `start.bat` any time: it opens two windows (backend on 38219, frontend on 34517) and the browser.
 
