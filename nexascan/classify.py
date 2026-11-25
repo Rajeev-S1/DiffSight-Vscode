@@ -80,7 +80,7 @@ def _same_lines(layout_region: BBox, text_region: Optional[BBox], pad: float) ->
 
 
 def _norm(s: str) -> str:
-    return "".join(ch for ch in normalize_ocr_text(s).lower() if ch.isalnum())
+    return normalize_ocr_text(s)
 
 
 def classify_pair(findings: List[Finding], ctx: Optional[VisualContext], cfg: Config

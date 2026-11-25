@@ -22,7 +22,7 @@ from .config import Config
 from .models import BBox, Finding, Line, PageData, Word, bbox_union
 from .visual_compare import VisualContext, local_move
 from .textutil import is_punct_token, punct_name, tokenize
-from .text_categories import classify_atomic_edit
+from .text_categories import classify_atomic_edit, whitespace_change
 
 
 @dataclass
@@ -395,6 +395,38 @@ def compare_text(page_a: PageData, page_b: PageData, words_a: List[Word], lines_
     ops = difflib.SequenceMatcher(None, keys_a, keys_b, autojunk=False).get_opcodes()
     fuzzy_pairs: List[Tuple[int, int]] = []
 
+    def add_whitespace_finding(i: int, j: int) -> None:
+        text_a = lines_a[i].text_exact or lines_a[i].text
+        text_b = lines_b[j].text_exact or lines_b[j].text
+        ws = whitespace_change(text_a, text_b)
+        if not ws:
+            return
+        tags, edit_details = classify_atomic_edit(text_a, text_b, "Modified")
+        ba = lines_a[i].bbox
+        bb_af = _mapped_line_bbox(lines_b[j], M)
+        region = bbox_union([ba, bb_af])
+        bb_own = map_box(inv, bb_af) if inv is not None else bb_af
+        if ocr_mode:
+            confidences = [words_a[k].conf for k in lines_a[i].words] + [words_b[k].conf for k in lines_b[j].words]
+            confidence = (min(confidences) if confidences else 80.0) / 100.0 * 0.9
+        else:
+            confidence = 0.98
+        description = f"spacing changed from '{text_a}' to '{text_b}'"
+        findings.append(Finding(
+            category="Modified", dtype="Text", page_a=pa_no, page_b=pb_no,
+            a_content=text_a, b_content=text_b, description=description,
+            bbox_a=ba, bbox_b=bb_own, confidence=round(confidence, 3),
+            engines=["text-ocr" if ocr_mode else "text-native"],
+            checklist_categories=tags,
+            detection_method="OCR whitespace comparison" if ocr_mode else "exact native-text whitespace comparison",
+            character_change=edit_details.get("character_change", {}),
+            whitespace_change=edit_details.get("whitespace_change", {}),
+            details={"a_changed": text_a, "b_changed": text_b, "a_tokens": [text_a], "b_tokens": [text_b],
+                     "ocr_only": ocr_mode, "checklist_categories": tags,
+                     "region_a_frame": region, "explain_region": region, **edit_details},
+            region=region,
+        ))
+
     # Paragraph/block reordering is identified before ordinary token diffing. Matched lines that
     # appear at a different reading-order position are moved text, not newly added/deleted text.
     reorder_pairs: List[Tuple[int, int]] = []
@@ -454,9 +486,10 @@ def compare_text(page_a: PageData, page_b: PageData, words_a: List[Word], lines_
 
     for op, i1, i2, j1, j2 in ops:
         if op == "equal":
-            for i in range(i1, i2):
+            for i, j in zip(range(i1, i2), range(j1, j2)):
                 if i not in reordered_a:
                     matched_lines += 1
+                    add_whitespace_finding(i, j)
             continue
         for a_ids, b_ids in _fuzzy_line_blocks(lines_a, lines_b, i1, i2, j1, j2):
             if any(i in reordered_a for i in a_ids) or any(j in reordered_b for j in b_ids):
@@ -465,8 +498,8 @@ def compare_text(page_a: PageData, page_b: PageData, words_a: List[Word], lines_
                 fuzzy_pairs.append((a_ids[0], b_ids[0]))
             # OCR disagreement between engines is not a document difference
             if ocr_mode and len(a_ids) == 1 and len(b_ids) == 1:
-                ra = {" ".join(t.split()) for t in [lines_a[a_ids[0]].text] + lines_a[a_ids[0]].alt_texts}
-                rb = {" ".join(t.split()) for t in [lines_b[b_ids[0]].text] + lines_b[b_ids[0]].alt_texts}
+                ra = set([lines_a[a_ids[0]].text] + lines_a[a_ids[0]].alt_texts)
+                rb = set([lines_b[b_ids[0]].text] + lines_b[b_ids[0]].alt_texts)
                 if ra & rb:
                     info["suppressed_ocr_disagreement"] += 1
                     matched_lines += 1      # both engines read the same text on one side: the line is unchanged
@@ -509,11 +542,9 @@ def compare_text(page_a: PageData, page_b: PageData, words_a: List[Word], lines_
                     )
                     if number_dtype == "Number":
                         dtype, cat, desc = number_dtype, "Modified", number_desc
-                a_full = "\n".join(lines_a[i].text_exact or lines_a[i].text for i in a_ids)
-                b_full = "\n".join(lines_b[j].text_exact or lines_b[j].text for j in b_ids)
                 tags, edit_details = classify_atomic_edit(
-                    a_full if len(a_full) > len(a_changed) else a_changed,
-                    b_full if len(b_full) > len(b_changed) else b_changed,
+                    a_changed,
+                    b_changed,
                     cat,
                     sentence_or_block=(cat in ("Added", "Removed") and len((a_changed or b_changed).split()) >= 4),
                     line_break_changed=(len(a_ids) != len(b_ids)),

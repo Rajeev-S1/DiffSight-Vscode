@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from nexascan.config import Config
-from nexascan.textutil import tokenize, is_punct_token, punct_name
+from nexascan.textutil import tokenize, is_punct_token, punct_name, normalize_ocr_text
 from nexascan.upload import UploadError, sniff_kind, safe_display_name, save_and_validate
 from nexascan.text_categories import (
     CHECKLIST_CATEGORIES,
@@ -23,6 +23,11 @@ def test_tokenize_splits_punctuation_individually():
 
 def test_punct_name_known():
     assert "full stop" in punct_name(".").lower()
+
+
+def test_ocr_normalization_preserves_punctuation_and_whitespace():
+    text = "“value”—\u00a0…"
+    assert normalize_ocr_text(text) == text
 
 
 def test_sniff_kinds():
@@ -180,19 +185,25 @@ def test_api_pool_uses_spawn_and_recycles_workers():
 def test_classify_pairs_short_keys_and_numbers_as_moved():
     ctx = _ctx([(0, 0, 100, 20), (500, 500, 600, 520)])
     rem = _finding("Number", "Removed", (0, 0, 100, 20), a="70 - 100")
-    add = _finding("Number", "Added", (500, 500, 600, 520), b="70-100")
+    add = _finding("Number", "Added", (500, 500, 600, 520), b="70 - 100")
     out, _ = classify.classify_pair([rem, add], ctx, Config())
     assert [(f.category, f.dtype) for f in out] == [("Moved", "Number")]
     rem = _finding("Text", "Removed", (0, 0, 100, 20), a="Net")
-    add = _finding("Text", "Added", (500, 500, 600, 520), b="net")
+    add = _finding("Text", "Added", (500, 500, 600, 520), b="Net")
     out, _ = classify.classify_pair([rem, add], ctx, Config())
-    assert [f.category for f in out] == ["Moved"]                  # 3-character keys are paired now (was >= 6)
+    assert [f.category for f in out] == ["Moved"]
+
+
+def test_move_matching_does_not_ignore_case_punctuation_or_spacing():
+    assert classify._norm("Alpha.") != classify._norm("Alpha")
+    assert classify._norm("Net") != classify._norm("net")
+    assert classify._norm("Alpha beta") != classify._norm("Alpha  beta")
 
 
 def test_classify_identical_removed_added_without_pixel_change_is_ocr_disagreement():
     ctx = _ctx([])                                                 # pixels identical
     rem = _finding("Text", "Removed", (0, 0, 100, 20), a="Reference range")
-    add = _finding("Text", "Added", (0, 30, 100, 50), b="reference  range")
+    add = _finding("Text", "Added", (0, 30, 100, 50), b="Reference range")
     out, sup = classify.classify_pair([rem, add], ctx, Config())
     assert out == [] and sup[0]["kind"] == "ocr_disagreement"
 
@@ -239,18 +250,25 @@ def test_classify_without_visual_context_caps_ocr_only_findings():
     assert out[0].status == "confirmed"                             # exact native text needs no pixel cross-check
 
 
-def test_checklist_classifies_character_spelling_and_casing_atomically():
+def test_checklist_reports_direct_word_edits_without_spell_or_duplicate_categories():
     tags, details = classify_atomic_edit("sediment", "sedimant", "Modified")
     assert "Modified words or characters" in tags
-    assert "Single-character changes" in tags
-    assert "Spelling mistakes" in tags
+    assert "Single-character changes" not in tags
+    assert "Spelling mistakes" not in tags
     assert details["character_change"]["atomic"] is True
-    assert details["spelling"]["incorrect_word"] == "sedimant"
-    assert details["spelling"]["reference_word"] == "sediment"
+    assert "spelling" not in details
+
+    tags, _ = classify_atomic_edit("Recieve", "Receive", "Modified")
+    assert "Modified words or characters" in tags
+    assert "Uppercase and lowercase changes" not in tags
+
+    tags, _ = classify_atomic_edit("hrs", "hours", "Modified")
+    assert "Modified words or characters" in tags
+    assert "Hyphenation and abbreviations" not in tags
 
     tags, _ = classify_atomic_edit("Vice", "vice", "Modified")
     assert "Uppercase and lowercase changes" in tags
-    assert "Single-character changes" in tags
+    assert "Single-character changes" not in tags
 
 
 def test_checklist_classifies_punctuation_hyphen_whitespace_and_breaks():
@@ -258,13 +276,20 @@ def test_checklist_classifies_punctuation_hyphen_whitespace_and_breaks():
     assert "Punctuation changes" in tags
     assert details["punctuation"] == {"original": ".", "modified": ";"}
 
+    tags, _ = classify_atomic_edit("—", "-", "Modified")
+    assert "Punctuation changes" in tags
+    assert "Hyphenation and abbreviations" not in tags
+
     tags, _ = classify_atomic_edit("mid-afternoon", "midafternoon", "Modified")
-    assert "Hyphenation and abbreviations" in tags
-    assert "Punctuation changes" not in tags
+    assert tags == ["Hyphenation and abbreviations"]
 
     tags, details = classify_atomic_edit("30 minutes", "30  minutes", "Modified")
-    assert "Extra or missing spaces" in tags
+    assert tags == ["Extra or missing spaces"]
     assert details["whitespace_change"]["modified_runs"][0]["count"] == 2
+
+    tags, details = classify_atomic_edit("ab c d", "a bc d", "Modified")
+    assert "Extra or missing spaces" in tags
+    assert details["whitespace_change"]["original_runs"] != details["whitespace_change"]["modified_runs"]
 
     tags, _ = classify_atomic_edit("Paragraph A", "Paragraph A\n\nParagraph B",
                                    "Added", sentence_or_block=True,
@@ -276,8 +301,6 @@ def test_checklist_classifies_punctuation_hyphen_whitespace_and_breaks():
 def test_checklist_summary_has_all_categories_with_unique_finding_counts():
     f1 = {"checklist_categories": [
         "Modified words or characters",
-        "Single-character changes",
-        "Spelling mistakes",
     ]}
     f2 = {"checklist_categories": [
         "Punctuation changes",
@@ -286,9 +309,10 @@ def test_checklist_summary_has_all_categories_with_unique_finding_counts():
     counts = normalized_category_counts([f1, f2])
     assert list(counts) == CHECKLIST_CATEGORIES
     assert counts["Modified words or characters"] == 2
-    assert counts["Single-character changes"] == 1
     assert counts["Punctuation changes"] == 1
     assert counts["Paragraph order changes"] == 0
+    assert "Spelling mistakes" not in counts
+    assert "Single-character changes" not in counts
 
 
 def test_multiword_replacement_is_one_token_change_block():

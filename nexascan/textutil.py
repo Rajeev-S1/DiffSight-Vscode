@@ -63,19 +63,9 @@ def reading_order(items: Sequence, bbox_of: Callable, glyph_h: float, _depth: in
 
 # --------------------------------------------------------------------------- OCR normalisation
 
-_QUOTE_MAP = {
-    "‘": "'", "’": "'", "‚": "'", "‛": "'", "′": "'",
-    "“": '"', "”": '"', "„": '"', "‟": '"', "″": '"',
-    "«": '"', "»": '"',
-    "‐": "-", "‑": "-", "‒": "-", "–": "-", "—": "-", "−": "-",
-    " ": " ", " ": " ", " ": " ", " ": " ",
-    "…": "...",
-}
-
 
 def normalize_ocr_text(s: str) -> str:
-    """OCR cannot reliably tell typographic from straight quotes / dash variants."""
-    s = "".join(_QUOTE_MAP.get(c, c) for c in s)
+    """Canonicalise Unicode composition without changing punctuation or whitespace."""
     return unicodedata.normalize("NFC", s)
 
 

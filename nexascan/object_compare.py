@@ -104,10 +104,6 @@ def _stamp_text(bgr: np.ndarray, ink: np.ndarray, box: BBox, cfg: Config) -> Tup
     return txt, (best[1] / max(1, len(re.sub(r"\W", "", txt)))) if txt else 0.0
 
 
-def _norm_alnum(s: str) -> str:
-    return re.sub(r"[^A-Z0-9]", "", s.upper())
-
-
 def _change_fraction(ctx: VisualContext, box: BBox) -> Tuple[float, float, float, int]:
     """(changed fraction, retained fraction of A ink, extra fraction of B ink) inside ``box``,
     using the same ink tolerance as the visual engine."""
@@ -283,7 +279,7 @@ def compare_objects(ctx: VisualContext, objs_a: List[dict], objs_b: List[dict], 
                 ta, ca = _stamp_text(ctx.bgr_a, ctx.ink_a, box_a, cfg)
                 tb, cb = _stamp_text(ctx.bgr_b, ctx.ink_b, box_b_af, cfg)
                 details.update({"stamp_text_a": ta, "stamp_text_b": tb})
-                if ta and tb and _norm_alnum(ta) != _norm_alnum(tb) and min(ca, cb) >= 50:
+                if ta and tb and ta != tb and min(ca, cb) >= 50:
                     changes.append(f"stamp text appears to differ (OCR A: '{ta}', B: '{tb}')")
                     cat = cat or "Modified"
             if cat is None:

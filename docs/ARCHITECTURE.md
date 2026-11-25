@@ -8,7 +8,7 @@
 | Rasterisation | PyMuPDF at 300 DPI (configurable) | Fast (~0.1–0.3 s/page) and deterministic, so images are *re-rendered* instead of cached. |
 | OCR (scans/images) | **PaddleOCR Large** PP-OCRv6 medium detection and recognition with ONNX Runtime | Scanned pages are rendered at the configured DPI, detected regions are sorted and cropped, then each crop is recognized and assembled into the existing Word/Line extraction format. |
 | Image ops | OpenCV, NumPy, Pillow, scikit-image (SSIM) | Free, CPU-fast. |
-| Text diff | `difflib.SequenceMatcher` (line → token → character) | As requested; `autojunk=False` for accuracy. |
+| Text diff | `difflib.SequenceMatcher` (line → token → character) | Direct Original-vs-Modified comparison; `autojunk=False` for accuracy. |
 | Web | FastAPI + uvicorn, process-pool worker, file-based progress | Non-blocking uploads; the event loop never runs CV code. |
 
 No LLMs, no paid APIs, no network access at runtime.
@@ -22,7 +22,7 @@ upload ─▶ validate ─▶ per document, per page (cached on sha256+config):
 page matching (DP over text/visual similarity; handles inserted, removed, moved pages)
 per matched pair:
    align B→A (SIFT/ORB + RANSAC similarity, ECC refinement, NCC check)
-   ├─ Text engine      line → token → char diff, punctuation/number/spelling classification,
+   ├─ Text engine      line → token → char diff, direct punctuation/number/whitespace classification,
    │                    font / position / alignment / spacing for equal text
    ├─ Visual engine    tolerance-based ink XOR, colour/tint delta, SSIM per region,
    │                    local re-alignment (separates "moved" and scan jitter from real change)

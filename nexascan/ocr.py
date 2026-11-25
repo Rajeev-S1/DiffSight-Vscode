@@ -91,11 +91,13 @@ def recognize_crop(crop: np.ndarray) -> Tuple[str, float]:
         return "", 0.0
     item = _unwrap(results[0])
     if isinstance(item, dict):
-        text = str(item.get("rec_text", "")).strip()
+        text = str(item.get("rec_text", ""))
         try:
             conf = float(item.get("rec_score", 0.0)) * 100.0
         except (TypeError, ValueError):
             conf = 0.0
+        if not text.strip():
+            return "", 0.0
         return normalize_ocr_text(text), conf
     return "", 0.0
 
@@ -117,7 +119,7 @@ def ocr_image(img: np.ndarray, cfg: Config) -> Tuple[List[Word], List[Line], flo
     for polygon in regions:
         crop = _crop_text_region(img, polygon)
         text, conf = recognize_crop(crop)
-        if not text:
+        if not text.strip():
             continue
         x0 = max(0.0, float(np.min(polygon[:, 0])))
         y0 = max(0.0, float(np.min(polygon[:, 1])))

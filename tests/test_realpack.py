@@ -9,6 +9,7 @@ warnings.filterwarnings("ignore")
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from nexascan.config import Config  # noqa: E402
+from nexascan.ingest import close_all  # noqa: E402
 from nexascan.pipeline import compare_documents  # noqa: E402
 
 PACK = ROOT / "tests" / "data" / "pack"
@@ -35,6 +36,32 @@ def test02_lab_report_no_false_moves(tmp_path):
     r = _run("02_JPG_Scanned_OCR", "original_lab_report.jpg", "revised_lab_report.jpg", tmp_path)
     t = " | ".join(_texts(r))
     assert "92 to 112" in t and "01 to 02" in t and any(i["dtype"] == "Stamp" for i in r["differences"])
+    assert len(r["differences"]) == 3
+    assert not any(i["category"] == "Moved" for i in r["differences"] + r["uncertain"])
+
+
+def test_scanned_pdf_uses_original_and_modified_ocr_text(tmp_path):
+    import pymupdf
+
+    sources = (
+        PACK / "02_JPG_Scanned_OCR" / "original_lab_report.jpg",
+        PACK / "02_JPG_Scanned_OCR" / "revised_lab_report.jpg",
+    )
+    pdfs = (tmp_path / "original_scan.pdf", tmp_path / "modified_scan.pdf")
+    for src, dst in zip(sources, pdfs):
+        doc = pymupdf.open()
+        page = doc.new_page(width=595.0, height=842.0)
+        page.insert_image(page.rect, filename=str(src))
+        doc.save(str(dst))
+        doc.close()
+
+    try:
+        r = compare_documents(str(pdfs[0]), pdfs[0].name, str(pdfs[1]), pdfs[1].name,
+                              tmp_path / "scanned_pdf_report", Config(use_cache=False))
+    finally:
+        close_all()
+    t = " | ".join(_texts(r))
+    assert "92 to 112" in t and "01 to 02" in t
     assert len(r["differences"]) == 3
     assert not any(i["category"] == "Moved" for i in r["differences"] + r["uncertain"])
 

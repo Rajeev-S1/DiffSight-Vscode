@@ -59,8 +59,6 @@ def test01_seven_content_changes_and_no_layout_rows(r01):
         "Added sentences or paragraphs",
         "Deleted sentences or paragraphs",
         "Modified words or characters",
-        "Single-character changes",
-        "Spelling mistakes",
         "Punctuation changes",
         "Uppercase and lowercase changes",
         "Extra or missing spaces",
