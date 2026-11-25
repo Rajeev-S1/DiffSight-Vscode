@@ -52,6 +52,7 @@ def scan_pdf(path, pages, source_dpis=None):
         pg = d.new_page(width=A4_W, height=A4_H)
         pg.insert_image(pg.rect, stream=_png(g))
     d.save(str(path))
+    d.close()
     return str(path)
 
 
@@ -64,6 +65,7 @@ def digital_pdf(path, n_pages=1, text="Amount payable: 1000", logo=False):
         if logo:                                              # small decorative image: must NOT make this a scan
             pg.insert_image(fitz.Rect(450, 40, 540, 90), stream=_png(np.full((60, 120), 90, np.uint8)))
     d.save(str(path))
+    d.close()
     return str(path)
 
 

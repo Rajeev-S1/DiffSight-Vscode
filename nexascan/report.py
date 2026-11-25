@@ -13,6 +13,7 @@ import numpy as np
 from . import __version__
 from .config import Config
 from .models import DocInfo, Finding, PageData
+from .text_categories import CHECKLIST_CATEGORIES, normalized_category_counts
 
 DISCLAIMER = ("DiffSight reports differences found by automated image and text analysis. It does not claim 100% "
               "accuracy. Findings marked 'uncertain' have weaker evidence and should be checked by a person. "
@@ -20,6 +21,7 @@ DISCLAIMER = ("DiffSight reports differences found by automated image and text a
               "made a mark. Content that could not be read is reported as unreadable, never guessed.")
 
 TITLES = {"Text": "Text Difference", "Number": "Text Difference (number)", "Punctuation": "Punctuation Difference",
+          "Paragraph": "Paragraph Difference",
           "Stamp": "Stamp Difference", "Signature": "Signature Difference", "Handwriting": "Handwriting Difference",
           "Image": "Image Difference", "Block": "Visual Difference (solid block)", "Line": "Visual Difference (line)",
           "Overlap": "Overlapping Content", "Hidden text": "Overlapping Content (hidden text)",
@@ -72,6 +74,12 @@ def finding_to_dict(f: Finding, cfg: Config, pa_list: List[PageData], pb_list: L
         "location": {"dpi": cfg.dpi, "a": _box(f.bbox_a, cfg.dpi, da), "b": _box(f.bbox_b, cfg.dpi, db)},
         "confidence": round(float(f.confidence), 3),
         "engines": sorted(set(f.engines)),
+        "checklist_categories": list(dict.fromkeys(
+            f.checklist_categories or f.details.get("checklist_categories") or []
+        )),
+        "detection_method": f.detection_method,
+        "character_change": f.character_change,
+        "whitespace_change": f.whitespace_change,
         "evidence": {k: f"evidence/{v}" for k, v in f.evidence.items()},
         "details": {k: v for k, v in f.details.items() if k not in ("region_a_frame",)},
     }
@@ -110,6 +118,7 @@ def build_report(ia: DocInfo, ib: DocInfo, pa_list, pb_list, pairs, findings: Li
     for n, i in enumerate(uncertain, 1):
         i["number"] = n
     by_cat, by_type = count_confirmed(confirmed)
+    text_comparison_summary = normalized_category_counts(confirmed)
     report = {
         "title": "DiffSight – Document Comparison Report",
         "tagline": "Every Detail. Every Difference.",
@@ -119,6 +128,7 @@ def build_report(ia: DocInfo, ib: DocInfo, pa_list, pb_list, pairs, findings: Li
         "document_b": {"name": ib.display_name, "pages": ib.pages, "kind": ib.kind, "sha256": ib.sha256},
         "summary": {"total_differences": len(confirmed), "uncertain_findings": len(uncertain),
                     "by_category": by_cat, "by_type": by_type,
+                    "text_comparison_summary": text_comparison_summary,
                     "page_pairs": [{"a": (p.a + 1 if p.a is not None else None), "b": (p.b + 1 if p.b is not None else None),
                                     "kind": p.kind, "similarity": round(p.sim, 3)} for p in pairs]},
         "differences": confirmed,
@@ -131,6 +141,7 @@ def build_report(ia: DocInfo, ib: DocInfo, pa_list, pb_list, pairs, findings: Li
                         "config": {"dpi": cfg.dpi, "tol_mm_native": cfg.tol_mm_native, "tol_mm_scan": cfg.tol_mm_scan,
                                    "confirmed_min": cfg.confirmed_min, "uncertain_min": cfg.uncertain_min}},
         "disclaimer": DISCLAIMER,
+        "text_comparison_summary": text_comparison_summary,
     }
     report = _clean(report)
     write_reports(report, out_dir)
@@ -153,10 +164,13 @@ def refresh_summary(report: dict) -> dict:
         for n, i in enumerate(report.get(key) or [], 1):
             i["number"] = n
     by_cat, by_type = count_confirmed(report["differences"])
+    text_comparison_summary = normalized_category_counts(report["differences"])
     s = report["summary"]
     s.update({"total_differences": len(report["differences"]), "uncertain_findings": len(report["uncertain"]),
               "by_category": by_cat, "by_type": by_type,
+              "text_comparison_summary": text_comparison_summary,
               "seen_only_at_higher_resolution": len(report.get("seen_only_at_higher_resolution") or [])})
+    report["text_comparison_summary"] = text_comparison_summary
     return report
 
 
@@ -227,6 +241,10 @@ def to_text(r: dict) -> str:
            f"Total Differences: {s['total_differences']}"
            + (f"   (+ {s['uncertain_findings']} uncertain finding(s) listed separately)" if s["uncertain_findings"] else ""),
            ""]
+    out += ["TEXT COMPARISON SUMMARY"]
+    for n, name in enumerate(CHECKLIST_CATEGORIES, 1):
+        out.append(f"{n}. {name} - {r.get('text_comparison_summary', {}).get(name, 0)}")
+    out.append("")
     for i in r["differences"]:
         out += _item_text(i) + [""]
     if not r["differences"]:
@@ -299,9 +317,11 @@ def _item_html(i: dict, out_dir: Optional[Path], embed: bool) -> str:
     figs = "".join(f'<figure><img loading="lazy" src="{_img(v, out_dir, embed)}" alt="{e(k)} evidence"><figcaption>{e(_EV_LABEL.get(k, k))}</figcaption></figure>'
                    for k, v in sorted(i["evidence"].items(), key=lambda kv: ["a", "b", "overlay", "layers"].index(kv[0]) if kv[0] in ("a", "b", "overlay", "layers") else 9))
     orig = f" – looks like: {e(i['details']['original_category'])}" if i["category"] == "Uncertain" and "original_category" in i["details"] else ""
+    tags = ", ".join(i.get("checklist_categories") or [])
+    checklist = f'<dt>Checklist categories</dt><dd>{e(tags)}</dd>' if tags else ""
     return (f'<section class="item c-{e(i["category"])}"><h3>{i["number"]}. {e(i["type"])}<span class="cat {e(i["category"])}">{e(i["category"])}</span></h3>'
             f'<dl><dt>Page</dt><dd>{e(str(page))}</dd><dt>Document A</dt><dd>{e(i["document_a"])}</dd>'
-            f'<dt>Document B</dt><dd>{e(i["document_b"])}</dd><dt>Difference</dt><dd>{e(i["difference"])}{orig}</dd>'
+            f'<dt>Document B</dt><dd>{e(i["document_b"])}</dd><dt>Difference</dt><dd>{e(i["difference"])}{orig}</dd>{checklist}'
             f'<dt>Location (A)</dt><dd>{e(_loc(i["location"]["a"]))}</dd><dt>Location (B)</dt><dd>{e(_loc(i["location"]["b"]))}</dd>'
             f'<dt>Confidence</dt><dd>{i["confidence"] * 100:.0f}% <span style="color:var(--mut)">({e(", ".join(i["engines"]))})</span></dd></dl>'
             f'<div class="ev">{figs}</div></section>')
@@ -318,6 +338,11 @@ def to_html(r: dict, out_dir: Optional[Path] = None, embed: bool = False) -> str
             f'<span>Total Differences: <b>{s["total_differences"]}</b></span>'
             f'<span>Uncertain: <b>{s["uncertain_findings"]}</b></span></div><div class="sum">{pills}</div>'
             + (f'<div class="tag">{e(dpi_line(r))}</div>' if dpi_line(r) else "")]
+    summary = r.get("text_comparison_summary") or {}
+    body.append("<h2>Text comparison summary</h2><div class=\"sum\">")
+    body += [f'<span class="pill">{n}. {e(name)}: {summary.get(name, 0)}</span>'
+             for n, name in enumerate(CHECKLIST_CATEGORIES, 1)]
+    body.append("</div>")
     body.append("<h2>Differences</h2>")
     body += [_item_html(i, out_dir, embed) for i in r["differences"]] or ["<p>No confirmed differences were found.</p>"]
     if r["uncertain"]:

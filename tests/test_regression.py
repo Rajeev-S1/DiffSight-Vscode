@@ -55,6 +55,19 @@ def _all_text(items):
 # ------------------------------------------------------------------------------------------ Test 01
 def test01_seven_content_changes_and_no_layout_rows(r01):
     diffs = r01["differences"]
+    assert list(r01["text_comparison_summary"]) == [
+        "Added sentences or paragraphs",
+        "Deleted sentences or paragraphs",
+        "Modified words or characters",
+        "Single-character changes",
+        "Spelling mistakes",
+        "Punctuation changes",
+        "Uppercase and lowercase changes",
+        "Extra or missing spaces",
+        "Line breaks and paragraph breaks",
+        "Hyphenation and abbreviations",
+        "Paragraph order changes",
+    ]
     assert len(diffs) == 7, [i["difference"] for i in diffs]
     assert not r01["uncertain"]
     assert [i for i in diffs if i["dtype"] in ("Layout", "Visual")] == []     # 0 extra layout rows

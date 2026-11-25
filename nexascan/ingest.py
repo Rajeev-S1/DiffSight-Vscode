@@ -5,6 +5,7 @@ PDF page costs ~0.1-0.3 s whereas OCR / object detection (which *are* cached) co
 from __future__ import annotations
 
 import hashlib
+import re
 import threading
 import unicodedata
 import warnings
@@ -158,11 +159,12 @@ def extract_native(info: DocInfo, index: int, cfg: Config) -> dict:
         r = pymupdf.Rect(b).transform(rm)
         return (r.x0 * z, r.y0 * z, r.x1 * z, r.y1 * z)
 
-    raw_lines: List[Tuple[tuple, List[Word]]] = []
+    raw_lines: List[Tuple[tuple, List[Word], str, int, int]] = []
     n_chars = 0
-    for blk in raw.get("blocks", []):
+    for block_index, blk in enumerate(raw.get("blocks", [])):
         if blk.get("type") != 0:
             continue
+        line_in_block = 0
         for ln in blk.get("lines", []):
             chars = []
             for sp in ln.get("spans", []):
@@ -170,6 +172,8 @@ def extract_native(info: DocInfo, index: int, cfg: Config) -> dict:
                     chars.append((ch["c"], ch["bbox"], sp))
             words: List[Word] = []
             cur: list = []
+            exact_chars = "".join(ch[0] for ch in chars)
+            exact_text = unicodedata.normalize("NFC", exact_chars)
 
             def flush():
                 if not cur:
@@ -186,7 +190,8 @@ def extract_native(info: DocInfo, index: int, cfg: Config) -> dict:
                 words.append(Word(text=text, bbox=bb, conf=100.0, source="native", font=font,
                                   size=float(sp0.get("size", 0.0)), bold=_is_bold(sp0.get("flags", 0), font),
                                   italic=_is_italic(sp0.get("flags", 0), font), color=int(sp0.get("color", 0)),
-                                  char_boxes=boxes))
+                                  char_boxes=boxes, text_exact=text, paragraph_id=block_index,
+                                  block_id=block_index))
                 cur.clear()
 
             for c in chars:
@@ -199,20 +204,28 @@ def extract_native(info: DocInfo, index: int, cfg: Config) -> dict:
             if words:
                 lb = (min(w.bbox[0] for w in words), min(w.bbox[1] for w in words),
                       max(w.bbox[2] for w in words), max(w.bbox[3] for w in words))
-                raw_lines.append((lb, words))
+                raw_lines.append((lb, words, exact_text, block_index, line_in_block))
+            line_in_block += 1
 
-    heights = [lb[3] - lb[1] for lb, _ in raw_lines]
+    heights = [lb[3] - lb[1] for lb, _, _, _, _ in raw_lines]
     glyph_h = float(np.median(heights)) if heights else 0.0
     ordered = reading_order(raw_lines, lambda t: t[0], glyph_h)
     all_words: List[Word] = []
     lines: List[Line] = []
-    for li, (lb, ws) in enumerate(ordered):
+    for li, (lb, ws, exact_text, block_id, line_in_block) in enumerate(ordered):
         ids = []
         for w in ws:
             w.line = li
             ids.append(len(all_words))
             all_words.append(w)
-        lines.append(Line(idx=li, words=ids, bbox=lb, text=" ".join(w.text for w in ws), conf=100.0))
+        whitespace_runs = [
+            {"text": match.group(0), "position": match.start(), "count": len(match.group(0))}
+            for match in re.finditer(r"\s+", exact_text)
+        ]
+        lines.append(Line(idx=li, words=ids, bbox=lb,
+                          text=exact_text if exact_text else " ".join(w.text for w in ws),
+                          text_exact=exact_text, paragraph_id=block_id, block_id=block_id,
+                          conf=100.0, whitespace_runs=whitespace_runs))
 
     page_area = rect.width * rect.height * z * z
     images = []

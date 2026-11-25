@@ -283,6 +283,10 @@ def detect_objects(prep: Prepared, words: List[Word], glyph_h: float, native_ima
         if res is None:
             continue
         otype, score, feat, colored, scores = res
+        # Born-digital pages have already masked native text glyphs. Generic ink heuristics must not
+        # reinterpret remaining outlines/vector rendering artifacts as handwriting.
+        if not scan and otype in ("handwriting", "mark", "text_unread"):
+            continue
         if otype in ("stamp", "handwriting") or (otype == "mark" and False):
             obj = objects[oi]
             obj.update({"type": otype, "score": round(float(score), 3), "colored": colored, "features": feat,
@@ -300,6 +304,8 @@ def detect_objects(prep: Prepared, words: List[Word], glyph_h: float, native_ima
         if res is None:
             continue
         otype, score, feat, colored, scores = res
+        if not scan and otype in ("handwriting", "mark", "text_unread"):
+            continue
         add(otype, (x, y, x + w, y + h), score, colored=colored, features=feat, scores=scores)
     return _finish(objects)
 

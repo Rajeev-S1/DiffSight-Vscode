@@ -8,6 +8,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from nexascan.config import Config
 from nexascan.textutil import tokenize, is_punct_token, punct_name
 from nexascan.upload import UploadError, sniff_kind, safe_display_name, save_and_validate
+from nexascan.text_categories import (
+    CHECKLIST_CATEGORIES,
+    classify_atomic_edit,
+    normalized_category_counts,
+)
 
 
 def test_tokenize_splits_punctuation_individually():
@@ -232,6 +237,68 @@ def test_classify_without_visual_context_caps_ocr_only_findings():
     native = _finding("Text", "Modified", (0, 0, 100, 20), a="foo", b="fob", conf=0.98, ocr_only=False)
     out, _ = classify.classify_pair([native], None, Config())
     assert out[0].status == "confirmed"                             # exact native text needs no pixel cross-check
+
+
+def test_checklist_classifies_character_spelling_and_casing_atomically():
+    tags, details = classify_atomic_edit("sediment", "sedimant", "Modified")
+    assert "Modified words or characters" in tags
+    assert "Single-character changes" in tags
+    assert "Spelling mistakes" in tags
+    assert details["character_change"]["atomic"] is True
+    assert details["spelling"]["incorrect_word"] == "sedimant"
+    assert details["spelling"]["reference_word"] == "sediment"
+
+    tags, _ = classify_atomic_edit("Vice", "vice", "Modified")
+    assert "Uppercase and lowercase changes" in tags
+    assert "Single-character changes" in tags
+
+
+def test_checklist_classifies_punctuation_hyphen_whitespace_and_breaks():
+    tags, details = classify_atomic_edit(".", ";", "Modified")
+    assert "Punctuation changes" in tags
+    assert details["punctuation"] == {"original": ".", "modified": ";"}
+
+    tags, _ = classify_atomic_edit("mid-afternoon", "midafternoon", "Modified")
+    assert "Hyphenation and abbreviations" in tags
+    assert "Punctuation changes" not in tags
+
+    tags, details = classify_atomic_edit("30 minutes", "30  minutes", "Modified")
+    assert "Extra or missing spaces" in tags
+    assert details["whitespace_change"]["modified_runs"][0]["count"] == 2
+
+    tags, _ = classify_atomic_edit("Paragraph A", "Paragraph A\n\nParagraph B",
+                                   "Added", sentence_or_block=True,
+                                   line_break_changed=True, paragraph_break_changed=True)
+    assert "Added sentences or paragraphs" in tags
+    assert "Line breaks and paragraph breaks" in tags
+
+
+def test_checklist_summary_has_all_categories_with_unique_finding_counts():
+    f1 = {"checklist_categories": [
+        "Modified words or characters",
+        "Single-character changes",
+        "Spelling mistakes",
+    ]}
+    f2 = {"checklist_categories": [
+        "Punctuation changes",
+        "Modified words or characters",
+    ]}
+    counts = normalized_category_counts([f1, f2])
+    assert list(counts) == CHECKLIST_CATEGORIES
+    assert counts["Modified words or characters"] == 2
+    assert counts["Single-character changes"] == 1
+    assert counts["Punctuation changes"] == 1
+    assert counts["Paragraph order changes"] == 0
+
+
+def test_multiword_replacement_is_one_token_change_block():
+    from nexascan.text_compare import Tok, _token_changes
+    ta = [Tok("BASELINE", 0, (0, 0, 20, 10)), Tok("VERSION", 1, (20, 0, 40, 10))]
+    tb = [Tok("REVISED", 0, (0, 0, 20, 10)), Tok("EDITION", 1, (20, 0, 40, 10))]
+    changes = list(_token_changes(ta, tb))
+    assert len(changes) == 1
+    assert changes[0][0] == [0, 1]
+    assert changes[0][1] == [0, 1]
 
 
 def _crash():

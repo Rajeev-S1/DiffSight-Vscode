@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import BinaryIO
 
@@ -131,5 +132,10 @@ def save_and_validate(fileobj: BinaryIO, original_name: str, job_dir: Path, slot
     try:
         return validate_file(dest, original_name, cfg)
     except UploadError:
-        dest.unlink(missing_ok=True)
+        for _ in range(8):
+            try:
+                dest.unlink(missing_ok=True)
+                break
+            except PermissionError:
+                time.sleep(0.05)
         raise

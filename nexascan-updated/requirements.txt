@@ -1,0 +1,19 @@
+# DiffSight – all dependencies are free / open-source.
+numpy>=1.26
+opencv-python-headless>=4.9
+pymupdf>=1.24
+Pillow>=10.0
+scikit-image>=0.22        # SSIM
+paddleocr>=3.3
+onnxruntime>=1.17
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+python-docx>=1.1          # Word (.docx) structure: alignment / underline check
+olefile>=0.46             # detects password-protected / invalid .doc and .docx containers
+# System program (not pip) for Word support: LibreOffice. Debian/Ubuntu: sudo apt install libreoffice-writer
+#   Windows: winget install -e --id TheDocumentFoundation.LibreOffice
+psutil>=5.9               # benchmarks only
+reportlab>=4.0            # tests only (sample document generation)
+pytest>=8.0               # tests only
+# Optional GPU: replace onnxruntime with onnxruntime-gpu and set NEXASCAN_GPU=1

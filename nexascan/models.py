@@ -31,6 +31,9 @@ class Word:
     italic: bool = False
     color: int = 0            # 0xRRGGBB, native only
     char_boxes: Optional[List[BBox]] = None
+    text_exact: str = ""
+    paragraph_id: int = -1
+    block_id: int = -1
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -52,6 +55,10 @@ class Line:
     text: str
     conf: float = 100.0
     alt_texts: List[str] = field(default_factory=list)   # readings from other OCR engines
+    text_exact: str = ""
+    paragraph_id: int = -1
+    block_id: int = -1
+    whitespace_runs: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -129,6 +136,10 @@ class Finding:
     status: str = "confirmed"          # confirmed | uncertain
     evidence: Dict[str, str] = field(default_factory=dict)
     id: int = 0
+    checklist_categories: List[str] = field(default_factory=list)
+    detection_method: str = ""
+    character_change: Dict[str, Any] = field(default_factory=dict)
+    whitespace_change: Dict[str, Any] = field(default_factory=dict)
     # internal: region in A-frame used for de-duplication (not exported as-is)
     region: Optional[BBox] = None
 

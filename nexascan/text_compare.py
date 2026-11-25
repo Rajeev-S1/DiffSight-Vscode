@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import difflib
 import math
+import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
@@ -21,6 +22,7 @@ from .config import Config
 from .models import BBox, Finding, Line, PageData, Word, bbox_union
 from .visual_compare import VisualContext, local_move
 from .textutil import is_punct_token, punct_name, tokenize
+from .text_categories import classify_atomic_edit
 
 
 @dataclass
@@ -80,6 +82,9 @@ def _kind_of_pair(a: str, b: str) -> Tuple[str, str]:
         return "Punctuation", f"{punct_name(a)} ({a}) changed to {punct_name(b)} ({b})"
     if a.replace(",", "").replace(".", "").isdigit() and b.replace(",", "").replace(".", "").isdigit():
         return "Number", f"number changed from {a} to {b}"
+    if (a.isalpha() and re.fullmatch(r"\d+(?:[.,]\d+)*", b)
+            or re.fullmatch(r"\d+(?:[.,]\d+)*", a) and b.isalpha()):
+        return "Number", f"word-to-number or number-to-word change: '{a}' changed to '{b}'"
     if a.isalpha() and b.isalpha():
         sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
         if sm.ratio() >= 0.6:
@@ -92,6 +97,39 @@ def _kind_of_pair(a: str, b: str) -> Tuple[str, str]:
 
 def _describe_block(a_toks: List[str], b_toks: List[str]) -> Tuple[str, str, str]:
     """(dtype, category, description) for one non-equal token block."""
+    a_join, b_join = _join(a_toks), _join(b_toks)
+    a_numbers = re.findall(r"\d+(?:[.,]\d+)*", a_join)
+    b_numbers = re.findall(r"\d+(?:[.,]\d+)*", b_join)
+    if len(a_numbers) == 1 and len(b_numbers) == 1 and a_numbers[0] != b_numbers[0]:
+        return "Number", "Modified", f"number changed from {a_numbers[0]} to {b_numbers[0]}"
+    if len(a_numbers) == len(b_numbers) and len(a_numbers) > 0:
+        differing = [(x, y) for x, y in zip(a_numbers, b_numbers) if x != y]
+        if len(differing) == 1:
+            old, new = differing[0]
+            return "Number", "Modified", f"number changed from {old} to {new}"
+    unmatched_a = list(a_numbers)
+    unmatched_b = list(b_numbers)
+    for value in list(unmatched_a):
+        if value in unmatched_b:
+            unmatched_a.remove(value)
+            unmatched_b.remove(value)
+    if len(unmatched_a) == 1 and len(unmatched_b) == 1:
+        return "Number", "Modified", f"number changed from {unmatched_a[0]} to {unmatched_b[0]}"
+    if len(a_numbers) >= 1 and len(b_numbers) >= 1 and a_numbers[0] != b_numbers[0]:
+        return "Number", "Modified", f"number changed from {a_numbers[0]} to {b_numbers[0]}"
+    def numeric_value(value: str) -> Optional[float]:
+        try:
+            return float(value.replace(",", "."))
+        except ValueError:
+            return None
+    if len(a_numbers) == 1 and len(b_numbers) >= 1:
+        av = numeric_value(a_numbers[0])
+        candidates = [(numeric_value(v), v) for v in b_numbers]
+        candidates = [(dv, v) for dv, v in candidates if dv is not None]
+        if av is not None and candidates:
+            _, bv = min(candidates, key=lambda item: abs(item[0] - av))
+            if bv != a_numbers[0]:
+                return "Number", "Modified", f"number changed from {a_numbers[0]} to {bv}"
     if not a_toks and b_toks:
         if all(is_punct_token(t) for t in b_toks):
             names = ", ".join(f"{punct_name(t)} ({t})" for t in b_toks)
@@ -172,6 +210,12 @@ def _tok_score(x: str, y: str) -> float:
         return 0.55
     if px != py:
         return _NEG
+    nx = bool(re.fullmatch(r"\d+(?:[.,]\d+)*", x))
+    ny = bool(re.fullmatch(r"\d+(?:[.,]\d+)*", y))
+    if nx and ny:
+        return 0.85
+    if (x.isalpha() and ny) or (nx and y.isalpha()):
+        return 0.70
     r = difflib.SequenceMatcher(None, x, y, autojunk=False).ratio()
     return r if r >= 0.5 else _NEG
 
@@ -215,6 +259,14 @@ def _token_changes(ta: List[Tok], tb: List[Tok]):
         if len(ai) * len(bi) == 0 or len(ai) > 60 or len(bi) > 60 or (len(ai) == 1 and len(bi) == 1):
             yield ai, bi, a1, b1
             continue
+        # Adjacent replacement words that align by position form one phrase-level edit.
+        # This avoids splitting "BASELINE VERSION" -> "REVISED EDITION" into two findings.
+        if 2 <= len(ai) == len(bi) <= 12:
+            a_words = [a[i] for i in ai]
+            b_words = [b[j] for j in bi]
+            if all(t.isalpha() for t in a_words + b_words):
+                yield ai, bi, a1, b1
+                continue
         pairs = _pair_tokens([a[i] for i in ai], [b[j] for j in bi])
         pend_a: List[int] = []
         pend_b: List[int] = []
@@ -343,11 +395,72 @@ def compare_text(page_a: PageData, page_b: PageData, words_a: List[Word], lines_
     ops = difflib.SequenceMatcher(None, keys_a, keys_b, autojunk=False).get_opcodes()
     fuzzy_pairs: List[Tuple[int, int]] = []
 
+    # Paragraph/block reordering is identified before ordinary token diffing. Matched lines that
+    # appear at a different reading-order position are moved text, not newly added/deleted text.
+    reorder_pairs: List[Tuple[int, int]] = []
+    if not ocr_mode:
+        matched_b_by_key: Dict[str, List[int]] = {}
+        matched_a_counts: Dict[str, int] = {}
+        for j, key in enumerate(keys_b):
+            matched_b_by_key.setdefault(key, []).append(j)
+        for i, key in enumerate(keys_a):
+            matched_a_counts[key] = matched_a_counts.get(key, 0) + 1
+        unique_pairs: List[Tuple[int, int]] = []
+        used_b = set()
+        for i, key in enumerate(keys_a):
+            if not key:
+                continue
+            candidates = matched_b_by_key.get(key, [])
+            if len(candidates) == 1 and matched_a_counts.get(key, 0) == 1 and candidates[0] not in used_b:
+                j = candidates[0]
+                if i != j:
+                    unique_pairs.append((i, j))
+                used_b.add(j)
+        inverted = set()
+        for p, (i1, j1) in enumerate(unique_pairs):
+            for i2, j2 in unique_pairs[p + 1:]:
+                if (i1 < i2 and j1 > j2) or (i1 > i2 and j1 < j2):
+                    inverted.update(((i1, j1), (i2, j2)))
+        reorder_pairs = sorted(inverted)
+    reordered_a = {i for i, _ in reorder_pairs}
+    reordered_b = {j for _, j in reorder_pairs}
+    if reorder_pairs:
+        ia = reorder_pairs[0][0]
+        ib = reorder_pairs[0][1]
+        originals = [keys_a[i] for i, _ in reorder_pairs]
+        modified = [keys_b[j] for _, j in reorder_pairs]
+        ba = bbox_union([lines_a[i].bbox for i, _ in reorder_pairs])
+        bb_af = bbox_union([map_box(M, lines_b[j].bbox) if M is not None else lines_b[j].bbox
+                            for _, j in reorder_pairs])
+        bb_own = map_box(inv, bb_af) if inv is not None and bb_af is not None else bb_af
+        moved = Finding(
+            category="Moved", dtype="Paragraph", page_a=pa_no, page_b=pb_no,
+            a_content="\n".join(originals), b_content="\n".join(modified),
+            description=f"paragraph/block text reordered (A positions {[i + 1 for i, _ in reorder_pairs]}, "
+                        f"B positions {[j + 1 for _, j in reorder_pairs]})",
+            bbox_a=ba, bbox_b=bb_own, confidence=0.97,
+            engines=["text-native" if not ocr_mode else "text-ocr"],
+            checklist_categories=["Paragraph order changes"],
+            detection_method="normalized paragraph fingerprint and reading-order sequence alignment",
+            details={
+                "original_positions": [i + 1 for i, _ in reorder_pairs],
+                "modified_positions": [j + 1 for _, j in reorder_pairs],
+                "checklist_categories": ["Paragraph order changes"],
+                "region_a_frame": bbox_union([ba, bb_af]),
+            },
+            region=bbox_union([ba, bb_af]),
+        )
+        findings.append(moved)
+
     for op, i1, i2, j1, j2 in ops:
         if op == "equal":
-            matched_lines += i2 - i1
+            for i in range(i1, i2):
+                if i not in reordered_a:
+                    matched_lines += 1
             continue
         for a_ids, b_ids in _fuzzy_line_blocks(lines_a, lines_b, i1, i2, j1, j2):
+            if any(i in reordered_a for i in a_ids) or any(j in reordered_b for j in b_ids):
+                continue
             if len(a_ids) == 1 and len(b_ids) == 1:
                 fuzzy_pairs.append((a_ids[0], b_ids[0]))
             # OCR disagreement between engines is not a document difference
@@ -387,14 +500,39 @@ def compare_text(page_a: PageData, page_b: PageData, words_a: List[Word], lines_
                     base, ocr_only = 0.98, False
                 first = ai[0] if ai else a_pos
                 firstb = bi[0] if bi else b_pos
+                a_changed = _span_text(ta, ai, words_a)
+                b_changed = _span_text(tb, bi, words_b)
+                if dtype == "Text" and cat in ("Added", "Removed", "Modified"):
+                    number_dtype, number_cat, number_desc = _describe_block(
+                        [a_changed] if a_changed else [],
+                        [b_changed] if b_changed else [],
+                    )
+                    if number_dtype == "Number":
+                        dtype, cat, desc = number_dtype, "Modified", number_desc
+                a_full = "\n".join(lines_a[i].text_exact or lines_a[i].text for i in a_ids)
+                b_full = "\n".join(lines_b[j].text_exact or lines_b[j].text for j in b_ids)
+                tags, edit_details = classify_atomic_edit(
+                    a_full if len(a_full) > len(a_changed) else a_changed,
+                    b_full if len(b_full) > len(b_changed) else b_changed,
+                    cat,
+                    sentence_or_block=(cat in ("Added", "Removed") and len((a_changed or b_changed).split()) >= 4),
+                    line_break_changed=(len(a_ids) != len(b_ids)),
+                    paragraph_break_changed=(bool(a_ids and b_ids) and
+                                             lines_a[a_ids[0]].paragraph_id != lines_b[b_ids[0]].paragraph_id),
+                )
                 f = Finding(category=cat, dtype=dtype, page_a=pa_no, page_b=pb_no,
                             a_content=_context(ta, first, first + len(ai), words_a),
                             b_content=_context(tb, firstb, firstb + len(bi), words_b),
                             description=desc, bbox_a=ba, bbox_b=bbox_b_own, confidence=round(base, 3),
                             engines=["text-ocr" if ocr_mode else "text-native"],
-                            details={"a_tokens": a_txt, "b_tokens": b_txt, "a_changed": _span_text(ta, ai, words_a),
-                                     "b_changed": _span_text(tb, bi, words_b), "ocr_only": ocr_only,
-                                     "region_a_frame": region},
+                            checklist_categories=tags,
+                            detection_method="native text/word/character sequence alignment" if not ocr_mode
+                                             else "OCR word/character sequence alignment",
+                            character_change=edit_details.get("character_change", {}),
+                            whitespace_change=edit_details.get("whitespace_change", {}),
+                            details={"a_tokens": a_txt, "b_tokens": b_txt, "a_changed": a_changed,
+                                     "b_changed": b_changed, "ocr_only": ocr_only,
+                                     "checklist_categories": tags, "region_a_frame": region, **edit_details},
                             region=region)
                 ref_a = at or ([ta[a_pos - 1]] if a_pos > 0 and a_pos - 1 < len(ta) else ta[a_pos:a_pos + 1])
                 ref_b = bt or ([tb[b_pos - 1]] if b_pos > 0 and b_pos - 1 < len(tb) else tb[b_pos:b_pos + 1])
@@ -407,6 +545,54 @@ def compare_text(page_a: PageData, page_b: PageData, words_a: List[Word], lines_
         fmt = _format_differences(page_a, page_b, words_a, lines_a, words_b, lines_b, ops, al, cfg,
                                   pa_no, pb_no, ocr_mode, fuzzy_pairs, ctx, info)
     findings += fmt
+
+    # Merge OCR/native line-side number substitutions that were emitted as separate Added/Removed
+    # findings (for example "92 mg/dL 70 - 100" and "112 mg/dL 70 - 100").
+    paired_number_ids = set()
+    merged_numbers = []
+    removed = [f for f in findings if f.category == "Removed" and f.dtype == "Text"]
+    added = [f for f in findings if f.category == "Added" and f.dtype == "Text"]
+    number_pattern = r"\d+(?:[.,]\d+)*"
+    for r in removed:
+        a_expr = r.details.get("a_changed") or r.a_content
+        if not a_expr:
+            continue
+        a_nums = re.findall(number_pattern, a_expr)
+        if not a_nums:
+            continue
+        for a in added:
+            b_expr = a.details.get("b_changed") or a.b_content
+            b_nums = re.findall(number_pattern, b_expr)
+            if not b_nums:
+                continue
+            if re.sub(number_pattern, "<N>", a_expr) != re.sub(number_pattern, "<N>", b_expr):
+                continue
+            differing = [(x, y) for x, y in zip(a_nums, b_nums) if x != y]
+            if len(differing) != 1:
+                continue
+            old, new = differing[0]
+            paired_number_ids.update((id(r), id(a)))
+            tags, edit_details = classify_atomic_edit(a_expr, b_expr, "Modified")
+            merged_numbers.append(Finding(
+                category="Modified", dtype="Number", page_a=pa_no, page_b=pb_no,
+                a_content=a_expr, b_content=b_expr,
+                description=f"number changed from {old} to {new}",
+                bbox_a=r.bbox_a or a.bbox_a, bbox_b=a.bbox_b or r.bbox_b,
+                confidence=round(min(r.confidence, a.confidence), 3),
+                engines=sorted(set(r.engines + a.engines)),
+                checklist_categories=tags,
+                detection_method="exact expression number substitution",
+                character_change=edit_details.get("character_change", {}),
+                whitespace_change=edit_details.get("whitespace_change", {}),
+                details={"a_changed": a_expr, "b_changed": b_expr,
+                         "checklist_categories": tags, "region_a_frame":
+                         bbox_union([r.region, a.region]), **edit_details},
+                region=bbox_union([r.region, a.region]),
+            ))
+            break
+    if paired_number_ids:
+        findings = [f for f in findings if id(f) not in paired_number_ids]
+        findings += merged_numbers
 
     # ---- "verified unchanged" summary: what was compared and found identical ----------------------
     n_a, n_b = len(words_a), len(words_b)
